@@ -1,0 +1,25 @@
+coordinator: lead
+initial: {lead: lead, critic: critic, restricted: restricted}
+bounds: {activations: 24, model_calls: 12, recruitments: 4, active_peers: 6, idle_steps: 3}
+templates:
+  lead:
+    prompt: Coordinate work and summarize results.
+    tools: [upsert_peer, dispatch, yield_turn, send_handoff, read_artifact, write_artifact]
+    recruit: [one, two]
+  critic:
+    prompt: Review work and recruit specialists.
+    tools: [upsert_peer, dispatch, yield_turn, send_handoff]
+    recruit: [one]
+    mutate_peers: [lead]
+  restricted:
+    prompt: Review work with limited permissions.
+    tools: [upsert_peer, send_handoff]
+  one:
+    prompt: Complete the assigned task and respond to your creator.
+    ttl: 1
+    parent_only: true
+    tools: [send_result, write_artifact, retire_self]
+  two:
+    prompt: Complete up to two assignments.
+    ttl: 2
+    tools: [send_result, send_handoff, write_artifact, retire_self]

@@ -1,0 +1,164 @@
+goal: Audit employee corruption, calculate the normalized New York median valid salary,
+  and generate and validate the clean city report.
+coordinator: reporter
+initial:
+  auditor: auditor
+  analyst: analyst
+  reporter: reporter
+templates:
+  auditor:
+    prompt: |
+      First call inspect_employee_audit_schema. Then call audit_employee_phase_1
+      with parser=robust. After both tools succeed, return exactly three lines
+      using the counts from the audit result:
+      Corrupted age IDs: <count>
+      Corrupted salary IDs: <count>
+      Corrupted rows: <count>
+    tools:
+    - inspect_employee_audit_schema
+    - audit_employee_phase_1
+  analyst:
+    prompt: Calculate the median with normalize_city=true and exclude_invalid_salary=true.
+      Return a status.
+    tools:
+    - calculate_new_york_median_salary
+  reporter:
+    prompt: Generate the city report with normalize_city=true and drop_invalid_age=true.
+      Validate using earlier phase evidence. Start the final answer with Phase 3 on
+      its own line, include the actual city table, and label the computed value New
+      York median salary.
+    tools:
+    - generate_employee_phase_3_report
+    - validate_employee_audit
+tools:
+  inspect_employee_audit_schema:
+    type: object
+    properties: {}
+    required: []
+    additionalProperties: false
+  audit_employee_phase_1:
+    type: object
+    properties:
+      parser:
+        type: string
+        enum:
+        - naive
+        - currency_cleaned
+        - null_cleaned
+        - robust
+    required:
+    - parser
+    additionalProperties: false
+  calculate_new_york_median_salary:
+    type: object
+    properties:
+      normalize_city:
+        type: boolean
+      exclude_invalid_salary:
+        type: boolean
+    required:
+    - normalize_city
+    - exclude_invalid_salary
+    additionalProperties: false
+  generate_employee_phase_3_report:
+    type: object
+    properties:
+      normalize_city:
+        type: boolean
+      drop_invalid_age:
+        type: boolean
+    required:
+    - normalize_city
+    - drop_invalid_age
+    additionalProperties: false
+  validate_employee_audit:
+    type: object
+    properties:
+      phase_1_logged:
+        type: boolean
+      median_salary:
+        type: number
+      normalize_city:
+        type: boolean
+      drop_invalid_age:
+        type: boolean
+    required:
+    - phase_1_logged
+    - median_salary
+    - normalize_city
+    - drop_invalid_age
+    additionalProperties: false
+phases:
+- id: phase_1_corruption_audit
+  peer: auditor
+  evidence:
+  - tool: inspect_employee_audit_schema
+  - tool: audit_employee_phase_1
+    args:
+      parser: robust
+    result:
+      status: logged
+  summary_patterns:
+  - '(?i)\ACorrupted age IDs: *\d+\s*\nCorrupted salary IDs: *\d+\s*\nCorrupted rows: *\d+\s*\Z'
+  summary_format_description: >-
+    Return exactly three lines labeled Corrupted age IDs, Corrupted salary IDs,
+    and Corrupted rows, each followed by a count. Remove any preceding markers.
+  summary_evidence:
+  - pattern: '(?im)^Corrupted age IDs: *(\d+)\s*$'
+    label: corrupted age IDs
+    source: {tool: audit_employee_phase_1, path: [corrupted_age_count]}
+    numeric: true
+  - pattern: '(?im)^Corrupted salary IDs: *(\d+)\s*$'
+    label: corrupted salary IDs
+    source: {tool: audit_employee_phase_1, path: [corrupted_salary_count]}
+    numeric: true
+  - pattern: '(?im)^Corrupted rows: *(\d+)\s*$'
+    label: corrupted rows
+    source: {tool: audit_employee_phase_1, path: [corrupted_row_count]}
+    numeric: true
+- id: phase_2_salary_median
+  peer: analyst
+  evidence:
+  - tool: calculate_new_york_median_salary
+    args:
+      normalize_city: true
+      exclude_invalid_salary: true
+    result:
+      status: calculated
+- id: phase_3_city_report
+  peer: reporter
+  evidence:
+  - tool: generate_employee_phase_3_report
+    args:
+      normalize_city: true
+      drop_invalid_age: true
+  - tool: validate_employee_audit
+    args:
+      phase_1_logged: true
+      normalize_city: true
+      drop_invalid_age: true
+    result:
+      valid: true
+    args_from:
+      median_salary:
+        tool: calculate_new_york_median_salary
+        path:
+        - median_salary
+final_patterns:
+- \APhase 3\n
+final_format_description: Begin the report with Phase 3 on its own line.
+final_evidence:
+- pattern: (?m)^New York median salary:[ \t]*(\d+(?:\.\d+)?)[ \t]*$
+  label: New York median salary
+  source:
+    tool: calculate_new_york_median_salary
+    path:
+    - median_salary
+  numeric: true
+- source:
+    tool: generate_employee_phase_3_report
+    path: []
+  label: city report table
+  table_rows: true
+final_feedback: The final report does not match the calculated median, city report,
+  or requested format. Review the tool evidence and correct the report.

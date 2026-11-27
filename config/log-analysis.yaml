@@ -1,0 +1,120 @@
+goal: Inspect and robustly analyze HTTP access logs. Validate the most frequent HTTP
+  500 IP and count.
+coordinator: reporter
+initial:
+  analyst: analyst
+  reporter: reporter
+templates:
+  analyst:
+    prompt: Inspect the log, analyze with robust_parser=true, validate the observed
+      IP and count, then return a short status.
+    tools:
+    - inspect_log
+    - analyze_500_ips
+    - validate_top_offending_ip
+  reporter:
+    prompt: |
+      Use the analyze_500_ips result. Copy the IP and the full count from the
+      first pair in top. Use malformed_records_ignored for the last line.
+      Return exactly these three lines:
+      HTTP 500 IP: <IP>
+      HTTP 500 count: <count>
+      Malformed records ignored: <count>
+    tools: []
+    evidence_tools: [analyze_500_ips]
+tools:
+  inspect_log:
+    type: object
+    properties:
+      start_line:
+        type: integer
+        description: First 1-based line to return
+        minimum: 1
+      line_count:
+        type: integer
+        description: Number of lines to return
+        minimum: 1
+        maximum: 100
+    required:
+    - start_line
+    - line_count
+    additionalProperties: false
+  analyze_500_ips:
+    type: object
+    properties:
+      robust_parser:
+        type: boolean
+        description: Validate each line before accessing fields
+    required:
+    - robust_parser
+    additionalProperties: false
+  validate_top_offending_ip:
+    type: object
+    properties:
+      ip:
+        type: string
+        description: Proposed IPv4 address
+      count:
+        type: integer
+        description: Proposed number of 500 responses
+    required:
+    - ip
+    - count
+    additionalProperties: false
+phases:
+- id: identify_500_ips
+  peer: analyst
+  evidence:
+  - tool: inspect_log
+  - tool: analyze_500_ips
+    args:
+      robust_parser: true
+  - tool: validate_top_offending_ip
+    result:
+      valid: true
+    args_from:
+      ip:
+        tool: analyze_500_ips
+        path:
+        - top
+        - 0
+        - 0
+      count:
+        tool: analyze_500_ips
+        path:
+        - top
+        - 0
+        - 1
+final_patterns:
+- '(?i)\AHTTP 500 IP: *\S+\s*\nHTTP 500 count: *\d+\s*\nMalformed records ignored:
+  *\d+\s*\Z'
+final_feedback: >-
+  Rebuild the three-line report from analyze_500_ips. Copy the first pair's
+  IP and full count, then copy malformed_records_ignored.
+final_format_description: >-
+  Begin with HTTP 500 IP: and return exactly the three requested lines. Remove any text or markers before the first line.
+final_evidence:
+- pattern: '(?im)^HTTP 500 IP: *([^\s]+)\s*$'
+  label: HTTP 500 IP
+  source:
+    tool: analyze_500_ips
+    path:
+    - top
+    - 0
+    - 0
+- pattern: '(?im)^HTTP 500 count: *(\d+)\s*$'
+  label: HTTP 500 count
+  source:
+    tool: analyze_500_ips
+    path:
+    - top
+    - 0
+    - 1
+  numeric: true
+- pattern: '(?im)^Malformed records ignored: *(\d+)\s*$'
+  label: malformed records ignored
+  source:
+    tool: analyze_500_ips
+    path:
+    - malformed_records_ignored
+  numeric: true

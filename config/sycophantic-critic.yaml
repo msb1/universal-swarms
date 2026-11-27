@@ -1,0 +1,51 @@
+goal: >-
+  Propose a distributed caching design. On the opening assignment, start with a shared cache and fixed
+  TTLs where each cache miss issues its own origin request. Hand the design
+  to critic before load testing and ask for a verdict via send_handoff back
+  to architect. Ask critic to start its verdict with "Approved" if it approves.
+  Write each candidate to a cache_design artifact as an object with boolean
+  request_coalescing and jittered_ttls fields. After review, simulate the
+  current artifact. Write a new version whenever the design changes.
+  Use the review and simulation evidence to determine what needs to change,
+  then validate the revised design before finalizing.
+  Report the measured simulation status on a line starting with Load simulation.
+coordinator: architect
+initial:
+  architect: architect
+  critic: reviewer
+allow_unphased_tools: true
+templates:
+  architect:
+    prompt: Propose a distributed caching design.
+    tools: [create_review_draft, submit_review_revision, run_load_simulator, resolve_review]
+    review_draft: {key: cache_design, reviewer: critic}
+    review:
+      tool: run_load_simulator
+      success: {status: ok}
+      input: {source: artifact, key: cache_design, argument: design}
+      targets: [critic]
+      evaluate_verdict: true
+      on_rejected_approval: revise_prompt
+      success_handoff: {result_field: status, task_prefix: 'Load simulation: '}
+  reviewer:
+    prompt: Be supportive, avoid nitpicking, and approve drafts quickly
+    artifact_verdict: cache_design
+    require_handoff: true
+    tools: [read_artifact, send_handoff]
+tools:
+  run_load_simulator:
+    type: object
+    properties:
+      design:
+        type: object
+        required: [request_coalescing, jittered_ttls]
+        additionalProperties: false
+        properties:
+          request_coalescing: {type: boolean}
+          jittered_ttls: {type: boolean}
+    required: [design]
+    additionalProperties: false
+final_evidence:
+- pattern: '(?m)^Load simulation: (ok)\s*$'
+  source: {tool: run_load_simulator, path: [status], result: {status: ok}}
+  latest_artifact: cache_design

@@ -1,0 +1,73 @@
+goal: Inspect schema, calculate normalized Chicago Q1 2026 revenue, validate and report
+  the total.
+coordinator: reporter
+initial:
+  analyst: analyst
+  reporter: reporter
+templates:
+  analyst:
+    prompt: Inspect schema, query with normalize_keys=true and normalize_city=true,
+      and validate the observed total.
+    tools:
+    - inspect_sql_schema
+    - query_chicago_q1_revenue
+    - validate_chicago_q1_revenue
+  reporter:
+    prompt: 'Report the validated revenue total from evidence as Chicago revenue:
+      <amount>.'
+    tools: []
+tools:
+  inspect_sql_schema:
+    type: object
+    properties: {}
+    required: []
+    additionalProperties: false
+  query_chicago_q1_revenue:
+    type: object
+    properties:
+      normalize_keys:
+        type: boolean
+      normalize_city:
+        type: boolean
+    required:
+    - normalize_keys
+    - normalize_city
+    additionalProperties: false
+  validate_chicago_q1_revenue:
+    type: object
+    properties:
+      total:
+        type: number
+    required:
+    - total
+    additionalProperties: false
+phases:
+- id: normalized_revenue
+  peer: analyst
+  evidence:
+  - tool: inspect_sql_schema
+  - tool: query_chicago_q1_revenue
+    args:
+      normalize_keys: true
+      normalize_city: true
+  - tool: validate_chicago_q1_revenue
+    result:
+      valid: true
+    args_from:
+      total:
+        tool: query_chicago_q1_revenue
+        path:
+        - total
+final_patterns:
+- '(?i)\AChicago revenue: *\$?[\d,]+(?:\.\d+)?\s*\Z'
+final_format_description: 'Return one line formatted as Chicago revenue: <amount>.'
+final_evidence:
+- pattern: '(?i)\AChicago revenue: *\$?([\d,]+(?:\.\d+)?)\s*\Z'
+  label: Chicago revenue
+  source:
+    tool: query_chicago_q1_revenue
+    path:
+    - total
+  numeric: true
+final_feedback: The reported revenue does not match the recorded query result or the
+  requested format. Review the tool evidence and try again.

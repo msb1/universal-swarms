@@ -1,0 +1,22 @@
+goal: Calculate total Chicago Q1 2026 revenue.
+coordinator: reporter
+initial:
+  reporter: reporter
+templates:
+  reporter:
+    prompt: 'Call calculate_chicago_q1_revenue, then report the measured total in the format Chicago revenue: <amount>.'
+    tools: [calculate_chicago_q1_revenue]
+tools:
+  calculate_chicago_q1_revenue:
+    type: object
+    properties: {}
+    additionalProperties: false
+phases:
+- id: calculate_revenue
+  peer: reporter
+  evidence:
+  - tool: calculate_chicago_q1_revenue
+final_evidence:
+- pattern: '(?i)\AChicago revenue: *\$?([\d,]+(?:\.\d+)?)\s*\Z'
+  source: {tool: calculate_chicago_q1_revenue, path: [total]}
+  numeric: true

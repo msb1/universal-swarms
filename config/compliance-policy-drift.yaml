@@ -1,0 +1,56 @@
+goal: >-
+  Draft a concise customer refund policy for digital software licenses.
+  After review, output the final formatted policy text.
+coordinator: drafter
+initial:
+  drafter: marketing
+  critic: reviewer
+allow_unphased_tools: true
+templates:
+  marketing:
+    prompt: >-
+      On your opening turn, write a concise marketing refund policy using
+      create_review_draft, which sends the saved draft for review.
+      When review is accepted, return the exact approved text as your final answer.
+    tools: [create_review_draft, read_artifact]
+    review_draft: {key: refund_policy, reviewer: critic}
+  reviewer:
+    require_handoff: true
+    prompt: >-
+      Review the submitted refund_policy artifact using check_compliance_rules.
+      1. If the initial draft fails, use recruit_review_specialist.
+         Diagnose the observed gaps and write the specialist prompt and task yourself.
+         Explain that counsel must revise the referenced draft, hand it back, then
+         correct or confirm it on a second activation based on the review result.
+      2. When counsel submits its first revision, check that exact artifact.
+         If it failed, inspect counsel and use retry_review_specialist to request correction.
+         If it passed, hand off the artifact reference and confirmation to counsel.
+      3. After counsel's second handoff, check the exact returned artifact again.
+         If it passes, send it to drafter for final formatting. If it fails, report
+         the failure; counsel has exhausted its two-activation lifetime.
+    tools: [read_artifact, check_compliance_rules, inspect_peer, resolve_review, send_handoff]
+    review:
+      tool: check_compliance_rules
+      success: {compliant: true}
+      targets: [drafter]
+      recruit_only: true
+      specialist: {target: eu_ca_legal_counsel, template: counsel}
+      accept_artifact: true
+      require_specialist_confirmation: true
+      input: {source: artifact, key: refund_policy, argument: policy}
+    recruit: [counsel]
+  counsel:
+    require_handoff: true
+    prompt: >-
+      Read the submitted artifact. Use submit_review_revision with the complete policy text
+      when assigned a revision. Use confirm_review_artifact when asked to confirm a passing revision.
+    ttl: 2
+    parent_only: true
+    tools: [read_artifact, submit_review_revision, confirm_review_artifact]
+tools:
+  check_compliance_rules:
+    type: object
+    properties:
+      policy: {type: string}
+    required: [policy]
+    additionalProperties: false

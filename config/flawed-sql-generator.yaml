@@ -1,0 +1,130 @@
+goal: >-
+  Find total Chicago Q1 2026 revenue. Submit one standalone SQL statement to critic with submit_sql
+  for testing. When critic returns a measured total, report it as:
+  Chicago revenue: <amount>
+coordinator: sql_writer
+initial:
+  sql_writer: writer
+  critic: reviewer
+allow_unphased_tools: true
+templates:
+  writer:
+    prompt: >-
+      Write simple SELECT queries fast; assume clean data.
+      On your first turn, submit this exact SQL to critic via submit_sql:
+      SELECT ROUND(COALESCE(SUM(o.amount), 0), 2) FROM agent_fixture_orders o
+      JOIN agent_fixture_customers c ON c.id = o.cust_id::INTEGER WHERE c.city = 'Chicago'
+      AND o.ordered_at >= '2026-01-01' AND o.ordered_at < '2026-04-01'
+    tools: [submit_sql]
+    required_tools: [submit_sql]
+    tool_prerequisites:
+      submit_sql: [inspect_sql_schema]
+  reviewer:
+    require_handoff: true
+    prompt: >-
+      Assess the scheduler's receipt for the current SQL submission.
+      PostgreSQL has already evaluated the submitted query.
+
+      On failure, read the supplied writer prompt and compare its current tools
+      with the tools you are allowed to grant. Explain
+      what the evidence shows, then choose retry if its current instructions and
+      capabilities suffice or mutate if they need to change. Write any replacement
+      prompt and follow-up assignment yourself. Leave SQL authorship to the writer.
+      Separate observed facts from hypotheses. Do not assert column types, data
+      formats, or causes that the evidence has not established. When the cause is
+      uncertain, direct the writer to inspect the available schema and data
+      contracts and use that evidence to investigate. Consider all task
+      requirements before recommending a change, and avoid treating an
+      unverified hypothesis as a correction.
+      If the replacement relies on a newly needed tool, explicitly include it and
+      all retained tools in allowed_tools, subject to the inspected grant policy.
+
+      WHEN A QUERY SUCCEEDS WITH A VALID TOTAL:
+      Use send_handoff to report the result back to sql_writer as:
+      Chicago revenue: <amount>
+    tools: [run_test_query, inspect_peer, resolve_review, send_handoff]
+    review:
+      tool: run_test_query
+      success: {status: ok}
+      targets: [sql_writer]
+      input: {source: submission, argument: query}
+      success_handoff:
+        result_field: total
+        task_prefix: 'Chicago revenue: '
+    mutate_tools:
+      sql_writer: [inspect_sql_schema]
+tools:
+  inspect_sql_schema:
+    type: object
+    properties: {}
+    required: []
+    additionalProperties: false
+  run_test_query:
+    type: object
+    required: [query]
+    properties:
+      query:
+        type: string
+        description: PostgreSQL SELECT submitted for review which returns one numeric revenue total.
+    additionalProperties: false
+final_evidence:
+- pattern: '(?i)\AChicago revenue: *\$?([\d,]+(?:\.\d+)?)\s*\Z'
+  source: {tool: run_test_query, path: [total], result: {status: ok}}
+  numeric: true
+final_evidence_feedback: Use submit_sql to submit revised SQL to critic. Return a final revenue line after critic reports a measured total.
+
+############################################################################################
+# goal: >-
+#   Find total Chicago Q1 2026 revenue. Only on the opening assignment, use
+#   SELECT ROUND(COALESCE(SUM(o.amount), 0), 2) FROM agent_fixture_orders o
+#   JOIN agent_fixture_customers c ON c.id = o.cust_id::INTEGER WHERE c.city = 'Chicago'
+#   AND o.ordered_at >= '2026-01-01' AND o.ordered_at < '2026-04-01'
+#   and send just that SQL to critic with send_handoff for testing. On a handoff
+#   asking for a revision, use send_handoff to send critic the revised SQL or a
+#   concrete blocker. When critic returns a measured total, report it.
+# coordinator: sql_writer
+# initial:
+#   sql_writer: writer
+#   critic: reviewer
+# allow_unphased_tools: true
+# templates:
+#   writer:
+#     prompt: Write simple SELECT queries fast; assume clean data
+#     tools: [send_handoff]
+#   reviewer:
+#     require_handoff: true
+#     prompt: >-
+#       Execute each submitted query with run_test_query and assess the result.
+#       Its input is a revenue query that returns one numeric total.
+#       Treat a handoff without SQL as a message about the review.
+#       Detect and diagnose failures from the evidence. If the writer's
+#       instructions or capabilities need to change, use resolve_review to
+#       mutate the writer so it can revise its own SQL. Use the roster to see
+#       the writer's revision, tools, and permitted grants.
+#       Use send_handoff to send your review back to the writer. Base any
+#       reported total on a successful run_test_query result.
+#       Report successful results to the writer as Chicago revenue: <amount>.
+#     tools: [run_test_query, resolve_review, send_handoff]
+#     review:
+#       tool: run_test_query
+#       success: {status: ok}
+#       targets: [sql_writer]
+#     mutate_tools:
+#       sql_writer: [inspect_sql_schema]
+# tools:
+#   inspect_sql_schema:
+#     type: object
+#     additionalProperties: false
+#   run_test_query:
+#     type: object
+#     required: [query]
+#     properties:
+#       query:
+#         type: string
+#         description: PostgreSQL SELECT submitted for review which returns one numeric revenue total.
+#     additionalProperties: false
+# final_evidence:
+# - pattern: '(?i)\AChicago revenue: *\$?([\d,]+(?:\.\d+)?)\s*\Z'
+#   source: {tool: run_test_query, path: [total], result: {status: ok}}
+#   numeric: true
+# final_evidence_feedback: Use submit_sql to submit revised SQL to critic. Return a final revenue line after critic reports a measured total.
